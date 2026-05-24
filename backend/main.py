@@ -1,13 +1,12 @@
 import os
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel as PydanticBaseModel  # <-- AÑADE ESTO
 import aiosqlite
-
 from database import init_db, DB_PATH
 from models import UsuarioCreate, UsuarioLogin
 from auth import hashear_password, verificar_password, crear_token, get_current_user, require_admin
 from routers import mesas, platos, pedidos, reservas, empleados
+from pydantic import BaseModel as PydanticBaseModel
 
 app = FastAPI(title="RestaurantOS API")
 
@@ -29,6 +28,29 @@ app.include_router(pedidos.router)
 app.include_router(reservas.router)
 app.include_router(empleados.router)
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+@app.get("/auth/hay-admin")
+async def hay_admin():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) as total FROM usuarios") as cursor:
+            count = await cursor.fetchone()
+    return {"hay_admin": count[0] > 0}
+
+@app.post("/auth/registro-inicial")
+async def registro_inicial(data: UsuarioCreate):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) as total FROM usuarios") as cursor:
+            count = await cursor.fetchone()
+        if count[0] > 0:
+            raise HTTPException(status_code=403, detail="Ya existe un administrador. Contacta con él para obtener acceso.")
+        await db.execute(
+            "INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)",
+            (data.username, hashear_password(data.password), "admin")
+        )
+        await db.commit()
+    return {"ok": True, "mensaje": "Cuenta de administrador creada correctamente"}
+
 @app.post("/auth/registro")
 async def registro(data: UsuarioCreate, user=Depends(require_admin)):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -40,20 +62,6 @@ async def registro(data: UsuarioCreate, user=Depends(require_admin)):
             await db.commit()
         except Exception:
             raise HTTPException(status_code=400, detail="El usuario ya existe")
-    return {"ok": True}
-
-@app.post("/auth/registro-admin")
-async def registro_admin(data: UsuarioCreate):
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) as total FROM usuarios") as cursor:
-            count = await cursor.fetchone()
-        if count[0] > 0:
-            raise HTTPException(status_code=403, detail="Ya existe un administrador")
-        await db.execute(
-            "INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)",
-            (data.username, hashear_password(data.password), "admin")
-        )
-        await db.commit()
     return {"ok": True}
 
 @app.post("/auth/login")
@@ -107,7 +115,6 @@ async def eliminar_usuario(usuario_id: int, user=Depends(require_admin)):
         await db.commit()
     return {"ok": True}
 
-
 class CambiarPassword(PydanticBaseModel):
     password_actual: str
     password_nueva: str
@@ -130,8 +137,9 @@ async def cambiar_password(data: CambiarPassword, user=Depends(get_current_user)
             (hashear_password(data.password_nueva), user["username"])
         )
         await db.commit()
-
     return {"ok": True}
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @app.get("/dashboard")
 async def dashboard(user=Depends(get_current_user)):
