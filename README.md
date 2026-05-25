@@ -42,6 +42,14 @@ Sistema de gestión integral para restaurantes desarrollado con **React** y **Fa
 - JWT con python-jose
 - Uvicorn
 
+## 🌐 Demo en producción
+
+**Frontend:** https://restaurant-os-chi.vercel.app
+
+**API:** https://restaurant-os-production-ddcc.up.railway.app/docs
+
+> El primer usuario que se registre se convierte en administrador automáticamente.
+
 ## 🚀 Instalación local
 
 ### Backend
